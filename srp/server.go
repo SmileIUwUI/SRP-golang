@@ -129,3 +129,18 @@ func (p *Params) VerifyM1Proof(receivedM1 []byte, SBytes []byte, ABytes []byte, 
 	// This prevents timing attacks that could reveal information about the proof
 	return subtle.ConstantTimeCompare(receivedM1, expectedM1) == 1
 }
+
+// GenerateServerProof generates the server's proof M2 (HAMK)
+// Called by the SERVER after successfully verifying client's M1
+//
+// Parameters:
+//
+//	ABytes - client's public ephemeral value A (from client)
+//	clientM1 - client's proof M1 (received from client and verified)
+//
+// Returns:
+//
+//	[]byte - server proof M2
+func (p *Params) GenerateServerProof(ABytes []byte, clientM1 []byte) []byte {
+	return p.generateM2Proof(ABytes, clientM1)
+}

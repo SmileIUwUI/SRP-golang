@@ -3,6 +3,7 @@ package srp
 import (
 	"crypto"
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"math/big"
@@ -179,4 +180,20 @@ func generatorX(username string, password string, lenSalt int16, hashFunc crypto
 //	[]byte - client proof M1
 func (p *Params) GenerateClientProof(SBytes []byte, ABytes []byte, BBytes []byte) []byte {
 	return p.generateM1Proof(SBytes, ABytes, BBytes)
+}
+
+// VerifyServerProof verifies the server's proof M2 on client side
+//
+// Parameters:
+//
+//	receivedM2 - M2 proof received from the server
+//	ABytes - client's public value A
+//	clientM1 - the M1 proof that client sent to server
+//
+// Returns:
+//
+//	bool - true if server proof is valid
+func (p *Params) VerifyServerProof(receivedM2 []byte, ABytes []byte, clientM1 []byte) bool {
+	expectedM2 := p.generateM2Proof(ABytes, clientM1)
+	return subtle.ConstantTimeCompare(receivedM2, expectedM2) == 1
 }

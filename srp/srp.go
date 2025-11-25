@@ -170,7 +170,8 @@ func calculateK(n *big.Int, g *big.Int, hashFunc crypto.Hash) (*big.Int, error) 
 	return k, nil
 }
 
-func (p *Params) generateM1Proof(SBytes []byte, ABytes []byte, BBytes []byte) []byte { // Calculate scrambling parameter U = H(PAD(A) | PAD(B))
+func (p *Params) generateM1Proof(SBytes []byte, ABytes []byte, BBytes []byte) []byte {
+	// Calculate scrambling parameter U = H(PAD(A) | PAD(B))
 	nLength := len(p.n.Bytes())
 	uHash := p.hashFunc.New()
 	uHash.Write(padToLength(ABytes, nLength))
@@ -208,4 +209,32 @@ func (p *Params) generateM1Proof(SBytes []byte, ABytes []byte, BBytes []byte) []
 	proof.Write(p.k.Bytes()) // K - SRP multiplier parameter
 
 	return proof.Sum(nil)
+}
+
+// generateM2Proof generates the server's key confirmation proof M2 (HAMK)
+// according to RFC 2945 formula: M2 = H(A | M1 | K)
+//
+// M2 serves as cryptographic evidence that the server possesses the correct
+// shared session key and has successfully verified the client's proof M1.
+//
+// Parameters:
+//
+//	ABytes - client's public ephemeral value A
+//	MBytes - client's proof M1 received from the client
+//
+// Returns:
+//
+//	[]byte - server proof M2 as byte slice
+func (p *Params) generateM2Proof(ABytes []byte, MBytes []byte) []byte {
+	// Compute M2 = H(A | M1 | K)
+	// This proof binds together:
+	// - Client's public key A (session identifier)
+	// - Client's proof M1 (prevents replay attacks)
+	// - SRP multiplier K (protocol parameter)
+	M2Hash := p.hashFunc.New()
+	M2Hash.Write(ABytes)      // A - client's public ephemeral value
+	M2Hash.Write(MBytes)      // M1 - client's proof received
+	M2Hash.Write(p.k.Bytes()) // K - SRP multiplier parameter
+
+	return M2Hash.Sum(nil)
 }
