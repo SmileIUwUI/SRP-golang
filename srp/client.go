@@ -1,6 +1,7 @@
 package srp
 
 import (
+	"crypto"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -10,27 +11,13 @@ import (
 // GenerateVerifier generates a salt and verifier for SRP registration
 // The process follows: x = H(salt | H(username | ":" | password))
 // verifier = g^x mod N
-// Returns salt, verifier as hex strings, and any error encountered
+// Returns verifier, salt as byte slices, and any error encountered
 func (p *Params) GenerateVerifier(username string, password string) ([]byte, []byte, error) {
-	// Compute H(username | ":" | password)
-	dataHash := p.hashFunc.New()
-	dataHash.Write([]byte(username))
-	dataHash.Write([]byte(":"))
-	dataHash.Write([]byte(password))
-	userPassHash := dataHash.Sum(nil)
-
-	// Generate cryptographically secure random salt
-	salt := make([]byte, p.lenSalt)
-	_, err := rand.Read(salt)
+	// Generate x and salt using the generatorX function
+	xBytes, salt, err := generatorX(username, password, p.lenSalt, p.hashFunc, nil)
 	if err != nil {
-		return []byte(""), []byte(""), err
+		return nil, nil, fmt.Errorf("failed to generate verifier: %w", err)
 	}
-
-	// Compute x = H(salt | H(username | ":" | password))
-	xHash := p.hashFunc.New()
-	xHash.Write(salt)
-	xHash.Write(userPassHash)
-	xBytes := xHash.Sum(nil)
 
 	// Convert hash output to a big integer
 	x := new(big.Int).SetBytes(xBytes)
@@ -38,22 +25,20 @@ func (p *Params) GenerateVerifier(username string, password string) ([]byte, []b
 	// Compute verifier: v = g^x mod N
 	v := new(big.Int).Exp(p.g, x, p.n)
 
-	// Encode to hexadecimal strings for storage/transmission
-
-	return salt, v.Bytes(), nil
+	return v.Bytes(), salt, nil
 }
 
-// GenerateKeyClient generates client's key pair for SRP authentication
+// GenerateKeyEphemeralClient generates client's ephemeral key pair for SRP authentication
 // Returns:
 //   - clientPublic (A) - client's public key A = g^a mod N
 //   - clientPrivate (a) - client's private ephemeral value
 //   - error if any operation fails
-func (p *Params) GenerateKeyEphemeralClient() ([]byte, []byte, error) {
+func (p *Params) GenerateKeyEphemeralClient() (public []byte, private []byte, err error) {
 	// Generate client's private ephemeral value a with sufficient entropy
 	byteLen := (p.abLen + 7) / 8 // Convert bits to bytes (rounding up)
 	aBytes := make([]byte, byteLen)
-	_, err := rand.Read(aBytes)
-	if err != nil {
+	_, errRead := rand.Read(aBytes)
+	if errRead != nil {
 		return nil, nil, fmt.Errorf("failed to generate client private value: %w", err)
 	}
 
@@ -70,4 +55,111 @@ func (p *Params) GenerateKeyEphemeralClient() ([]byte, []byte, error) {
 	}
 
 	return A.Bytes(), aBytes, nil
+}
+
+// GenerateSharedKeyClient computes the client's shared session key
+// using the formula: S = (B - (k * g^x)) ^ (a + (u * x)) % N
+// username - client username
+// password - client password
+// salt - salt used during registration
+// ABytes - client's public ephemeral value A
+// BBytes - server's public ephemeral value B
+// aBytes - client's private ephemeral value a
+// Returns the shared secret S or error if computation fails
+func (p *Params) GenerateSharedKeyClient(username string, password string, salt []byte, ABytes []byte, BBytes []byte, aBytes []byte) ([]byte, error) {
+	// Validate input parameters
+	if len(username) == 0 || len(password) == 0 || len(salt) == 0 ||
+		len(ABytes) == 0 || len(BBytes) == 0 || len(aBytes) == 0 {
+		return nil, errors.New("all input parameters must be non-empty")
+	}
+
+	// Calculate x = H(salt | H(username | ":" | password))
+	xBytes, _, err := generatorX(username, password, 0, p.hashFunc, salt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate x: %w", err)
+	}
+
+	// Calculate scrambling parameter u = H(PAD(A) | PAD(B))
+	nLength := len(p.n.Bytes())
+	uHash := p.hashFunc.New()
+	uHash.Write(padToLength(ABytes, nLength))
+	uHash.Write(padToLength(BBytes, nLength))
+	u := new(big.Int).SetBytes(uHash.Sum(nil))
+
+	// Convert byte slices to big.Int
+	B := new(big.Int).SetBytes(BBytes)
+	x := new(big.Int).SetBytes(xBytes)
+	a := new(big.Int).SetBytes(aBytes)
+
+	// RFC 5054 security validation: B must not be 0 and must be less than N
+	if B.Sign() == 0 {
+		return nil, errors.New("server public value B cannot be zero")
+	}
+	if B.Cmp(p.n) >= 0 {
+		return nil, errors.New("server public value B must be less than N")
+	}
+
+	// Compute shared secret using client formula: S = (B - (k * g^x)) ^ (a + (u * x)) % N
+
+	// Step 1: Compute k * g^x mod N
+	gx := new(big.Int).Exp(p.g, x, p.n) // g^x mod N
+	kgx := new(big.Int).Mul(p.k, gx)    // k * g^x
+	kgx.Mod(kgx, p.n)                   // (k * g^x) mod N
+
+	// Step 2: Compute B - (k * g^x) mod N
+	// Handle negative result by adding N if needed
+	base := new(big.Int).Sub(B, kgx)
+	if base.Sign() < 0 {
+		base.Add(base, p.n)
+	}
+	base.Mod(base, p.n)
+
+	// Ensure base is not zero
+	if base.Sign() == 0 {
+		return nil, errors.New("base for exponentiation cannot be zero")
+	}
+
+	// Step 3: Compute exponent (a + u * x)
+	exponent := new(big.Int).Mul(u, x) // u * x
+	exponent.Add(exponent, a)          // a + u * x
+	exponent.Mod(exponent, p.n)        // (a + u * x) mod N
+
+	// Step 4: Compute S = base^exponent mod N
+	S := new(big.Int).Exp(base, exponent, p.n)
+
+	// Ensure shared secret is not zero
+	if S.Sign() == 0 {
+		return nil, errors.New("computed shared secret cannot be zero")
+	}
+
+	return S.Bytes(), nil
+}
+
+// generatorX computes x = H(salt | H(username | ":" | password))
+// If salt is provided, it uses that salt; otherwise generates a new one
+// Returns x value and salt used
+func generatorX(username string, password string, lenSalt int16, hashFunc crypto.Hash, salt []byte) ([]byte, []byte, error) {
+	// Compute H(username | ":" | password)
+	dataHash := hashFunc.New()
+	dataHash.Write([]byte(username + ":" + password))
+	userPassHash := dataHash.Sum(nil)
+
+	var saltGenerate []byte
+	if salt == nil {
+		saltGenerate = make([]byte, lenSalt)
+		_, err := rand.Read(saltGenerate)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to generate salt: %w", err)
+		}
+	} else {
+		saltGenerate = salt
+	}
+
+	// Compute x = H(salt | H(username | ":" | password))
+	xHash := hashFunc.New()
+	xHash.Write(saltGenerate)
+	xHash.Write(userPassHash)
+	xBytes := xHash.Sum(nil)
+
+	return xBytes, saltGenerate, nil
 }

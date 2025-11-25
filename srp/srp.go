@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"errors"
+	"fmt"
 	"math/big"
 )
 
@@ -113,32 +114,58 @@ func padToLength(bytes []byte, targetLen int) []byte {
 	return append(padding, bytes...)
 }
 
+// calculateK computes the SRP multiplier parameter k
+// k = H(N | G) where N and G are padded to the same length
+// Follows RFC 5054 specification for parameter encoding
+//
+// Parameters:
+//
+//	n - large safe prime modulus
+//	g - generator modulo n
+//	hashFunc - cryptographic hash function to use
+//
+// Returns:
+//
+//	k - multiplier parameter as *big.Int
+//	error - if validation fails or computation error occurs
 func calculateK(n *big.Int, g *big.Int, hashFunc crypto.Hash) (*big.Int, error) {
-	// Create new hash instance
+	// Create new hash instance for computing k = H(N | G)
 	h := hashFunc.New()
 
-	// Get byte representations of n and g
+	// Get byte representations of N and G for hashing
 	nBytes := n.Bytes()
 	gBytes := g.Bytes()
 
+	// Get lengths of N and G byte representations
 	nLen := len(nBytes)
 	gLen := len(gBytes)
 
-	// If 'g' is less than 'n', the length is aligned using the zero byte addition method according to RFC 5054.
+	// If 'g' is shorter than 'n', the length is aligned using zero byte padding
+	// This follows RFC 5054 specification for parameter encoding
 	if nLen > gLen {
 		// The highest byte of 'g' must not be zero according to RFC 5054
+		// This ensures proper interpretation of the generator value
 		if len(gBytes) > 0 && gBytes[0] == 0x00 {
 			return nil, errors.New("highest byte of generator cannot be zero")
 		}
 
 		// Pad gBytes with leading zeros to match the length of nBytes
-		gBytes = padToLength(gBytes, nLen)
+		// This ensures both values have the same byte length for hashing
+		padding := make([]byte, nLen-gLen)
+		gBytes = append(padding, gBytes...)
 	}
 
-	// Compute hash: H(N | G)
+	// Compute hash k = H(N | G)
+	// Write N bytes followed by G bytes to the hash function
 	h.Write(nBytes)
 	h.Write(gBytes)
 
-	// Convert hash result to big integer
-	return new(big.Int).SetBytes(h.Sum(nil)), nil
+	// Get the hash result and convert to big integer
+	kBytes := h.Sum(nil)
+	k := new(big.Int).SetBytes(kBytes)
+
+	// Debug output: print computed k value
+	fmt.Printf("Debug calculateK - k: %x\n", k.Bytes())
+
+	return k, nil
 }
