@@ -117,7 +117,7 @@ func calculateK(n *big.Int, g *big.Int, hashFunc crypto.Hash) (*big.Int, error) 
 	if nLen > gLen {
 		// The highest byte of 'g' must not be zero according to RFC 5054
 		if len(gBytes) > 0 && gBytes[0] == 0x00 {
-			return big.NewInt(0), errors.New("highest byte of generator cannot be zero")
+			return nil, errors.New("highest byte of generator cannot be zero")
 		}
 
 		// Pad gBytes with leading zeros to match the length of nBytes
