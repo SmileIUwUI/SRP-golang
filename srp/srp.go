@@ -3,7 +3,6 @@ package srp
 import (
 	"crypto"
 	"crypto/md5"
-	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -21,6 +20,7 @@ type Params struct {
 	n        *big.Int
 	g        *big.Int
 	k        *big.Int
+	abLen    int
 	hashFunc crypto.Hash
 	lenSalt  int16
 }
@@ -49,6 +49,7 @@ func NewParams(secure int16, hashFunc crypto.Hash, lenSalt int16) (*Params, erro
 	}
 
 	var N, G *big.Int
+	var abLen int
 
 	// Select predefined N and G values based on security level
 	// These are standard SRP group parameters from RFC 5054
@@ -56,18 +57,23 @@ func NewParams(secure int16, hashFunc crypto.Hash, lenSalt int16) (*Params, erro
 	case 2048:
 		N = N_2048
 		G = G_2048
+		abLen = ab_2048_len
 	case 3072:
 		N = N_3072
 		G = G_3072
+		abLen = ab_3072_len
 	case 4096:
 		N = N_4096
 		G = G_4096
+		abLen = ab_4096_len
 	case 6144:
 		N = N_6144
 		G = G_6144
+		abLen = ab_6144_len
 	case 8192:
 		N = N_8192
 		G = G_8192
+		abLen = ab_8192_len
 	default:
 		return nil, errors.New("invalid security level - supported values: 2048, 3072, 4096, 6144, 8192")
 	}
@@ -83,45 +89,10 @@ func NewParams(secure int16, hashFunc crypto.Hash, lenSalt int16) (*Params, erro
 		n:        N,
 		g:        G,
 		k:        K,
+		abLen:    abLen,
 		hashFunc: hashFunc,
 		lenSalt:  lenSalt,
 	}, nil
-}
-
-// GenerateVerifier generates a salt and verifier for SRP registration
-// The process follows: x = H(salt | H(username | ":" | password))
-// verifier = g^x mod N
-// Returns salt, verifier as hex strings, and any error encountered
-func (p *Params) GenerateVerifier(username string, password string) ([]byte, []byte, error) {
-	// Compute H(username | ":" | password)
-	dataHash := p.hashFunc.New()
-	dataHash.Write([]byte(username))
-	dataHash.Write([]byte(":"))
-	dataHash.Write([]byte(password))
-	userPassHash := dataHash.Sum(nil)
-
-	// Generate cryptographically secure random salt
-	salt := make([]byte, p.lenSalt)
-	_, err := rand.Read(salt)
-	if err != nil {
-		return []byte(""), []byte(""), err
-	}
-
-	// Compute x = H(salt | H(username | ":" | password))
-	xHash := p.hashFunc.New()
-	xHash.Write(salt)
-	xHash.Write(userPassHash)
-	xBytes := xHash.Sum(nil)
-
-	// Convert hash output to a big integer
-	x := new(big.Int).SetBytes(xBytes)
-
-	// Compute verifier: v = g^x mod N
-	v := new(big.Int).Exp(p.g, x, p.n)
-
-	// Encode to hexadecimal strings for storage/transmission
-
-	return salt, v.Bytes(), nil
 }
 
 // calculateK computes the SRP multiplier parameter k
