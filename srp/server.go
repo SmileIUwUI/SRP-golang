@@ -2,6 +2,7 @@ package srp
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"math/big"
@@ -105,4 +106,26 @@ func (p *Params) GenerateSharedKeyServer(ABytes []byte, BBytes []byte, bBytes []
 	}
 
 	return S.Bytes(), nil
+}
+
+// VerifyM1Proof verifies the client's key confirmation proof M1
+// Uses constant-time comparison to prevent timing attacks
+//
+// Parameters:
+//
+//	receivedM1 - the M1 proof received from the client
+//	SBytes - shared secret S (session key) computed by server
+//	ABytes - client's public ephemeral value A
+//	BBytes - server's public ephemeral value B
+//
+// Returns:
+//
+//	bool - true if client proof is valid, false otherwise
+func (p *Params) VerifyM1Proof(receivedM1 []byte, SBytes []byte, ABytes []byte, BBytes []byte) bool {
+	// Generate expected M1 proof using the same parameters
+	expectedM1 := p.generateM1Proof(SBytes, ABytes, BBytes)
+
+	// Compare proofs using constant-time comparison
+	// This prevents timing attacks that could reveal information about the proof
+	return subtle.ConstantTimeCompare(receivedM1, expectedM1) == 1
 }
