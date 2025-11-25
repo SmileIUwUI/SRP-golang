@@ -6,20 +6,23 @@ import (
 )
 
 // All group parameters are taken from RFC 5054 (https://www.ietf.org/rfc/rfc5054)
+// These are standard SRP group parameters for different security levels
 
 var (
+	// 2048-bit group parameters
 	N_2048 = mustHexToBigInt("AC6BDB41324A9A9BF166DE5E1389582FAF72B6651987EE07FC319294" +
 		"3DB56050A37329CBB4A099ED8193E0757767A13DD52312AB4B03310D" +
 		"CD7F48A9DA04FD50E8083969EDB767B0CF6095179A163AB3661A05FB" +
-		"D5FAAAE82918A9962F0B93B855F97993EC975EEAA80D740ADBF4FF74" +
+		"BD5FAAAE82918A9962F0B93B855F97993EC975EEAA80D740ADBF4FF74" +
 		"7359D041D5C33EA71D281E446B14773BCA97B43A23FB801676BD207A" +
 		"436C6481F1D2B9078717461A5B9D32E688F87748544523B524B0D57D" +
 		"5EA77A2775D2ECFA032CFBDBF52FB3786160279004E57AE6AF874E73" +
 		"03CE53299CCC041C7BC308D82A5698F3A8D0C38271AE35F8E9DBFBB6" +
-		"94B5C803D89F7AE435DE236D525F54759B65E372FCD68EF20FA7111F" +
+		"694B5C803D89F7AE435DE236D525F54759B65E372FCD68EF20FA7111F" +
 		"9E4AFF73")
 	G_2048 = big.NewInt(2)
 
+	// 3072-bit group parameters
 	N_3072 = mustHexToBigInt("FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08" +
 		"8A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B" +
 		"302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9" +
@@ -36,6 +39,7 @@ var (
 		"E0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF")
 	G_3072 = big.NewInt(5)
 
+	// 4096-bit group parameters
 	N_4096 = mustHexToBigInt("FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08" +
 		"8A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B" +
 		"302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9" +
@@ -57,6 +61,7 @@ var (
 		"FFFFFFFFFFFFFFFF")
 	G_4096 = big.NewInt(5)
 
+	// 6144-bit group parameters
 	N_6144 = mustHexToBigInt("FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08" +
 		"8A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B" +
 		"302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9" +
@@ -87,6 +92,7 @@ var (
 		"6DCC4024FFFFFFFFFFFFFFFF")
 	G_6144 = big.NewInt(5)
 
+	// 8192-bit group parameters
 	N_8192 = mustHexToBigInt("FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08" +
 		"8A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B" +
 		"302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9" +
@@ -127,9 +133,15 @@ var (
 	G_8192 = big.NewInt(19)
 )
 
+// mustHexToBigInt converts a hexadecimal string to a big.Int
+// Panics if the string is not a valid hexadecimal number
+// hexStr - hexadecimal string that may contain formatting characters
+// Returns *big.Int representation of the hexadecimal number
 func mustHexToBigInt(hexStr string) *big.Int {
+	// Remove any non-hexadecimal characters (spaces, newlines, etc.)
 	cleaned := removeHexFormatting(hexStr)
 
+	// Parse the cleaned hexadecimal string
 	n, ok := new(big.Int).SetString(cleaned, 16)
 	if !ok {
 		panic(fmt.Sprintf("invalid hex string: %s", hexStr))
@@ -137,10 +149,15 @@ func mustHexToBigInt(hexStr string) *big.Int {
 	return n
 }
 
+// removeHexFormatting removes all non-hexadecimal characters from a string
+// This allows the hexadecimal strings to be formatted with line breaks for readability
+// hexStr - input string that may contain formatting characters
+// Returns string containing only hexadecimal characters (0-9, a-f, A-F)
 func removeHexFormatting(hexStr string) string {
 	result := make([]byte, 0, len(hexStr))
 	for i := 0; i < len(hexStr); i++ {
 		c := hexStr[i]
+		// Keep only hexadecimal characters
 		if (c >= '0' && c <= '9') ||
 			(c >= 'a' && c <= 'f') ||
 			(c >= 'A' && c <= 'F') {
