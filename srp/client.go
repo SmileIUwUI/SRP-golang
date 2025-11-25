@@ -163,3 +163,57 @@ func generatorX(username string, password string, lenSalt int16, hashFunc crypto
 
 	return xBytes, saltGenerate, nil
 }
+
+// GenerateClientProof generates the client's key confirmation proof (M1)
+// according to RFC 2945 formula: M1 = H( H(N) XOR H(g) | H(U) | s | A | B | K )
+// This proves that the client possesses the correct session key
+//
+// Parameters:
+//
+//	SBytes - shared secret S (session key)
+//	ABytes - client's public ephemeral value A
+//	BBytes - server's public ephemeral value B
+//
+// Returns:
+//
+//	[]byte - client proof M1
+func (p *Params) GenerateClientProof(SBytes []byte, ABytes []byte, BBytes []byte) []byte {
+	// Calculate scrambling parameter U = H(PAD(A) | PAD(B))
+	nLength := len(p.n.Bytes())
+	uHash := p.hashFunc.New()
+	uHash.Write(padToLength(ABytes, nLength))
+	uHash.Write(padToLength(BBytes, nLength))
+	uBytes := uHash.Sum(nil) // U = H(A | B)
+
+	// Compute H(N) - hash of the prime modulus
+	nHash := p.hashFunc.New()
+	nHash.Write(p.n.Bytes())
+	hN := nHash.Sum(nil)
+
+	// Compute H(g) - hash of the generator
+	gHash := p.hashFunc.New()
+	gHash.Write(p.g.Bytes())
+	hG := gHash.Sum(nil)
+
+	// Compute H(N) XOR H(g)
+	// Ensure both hashes have the same length by using the shorter one
+	minLen := len(hN)
+	if len(hG) < minLen {
+		minLen = len(hG)
+	}
+	xorResult := make([]byte, minLen)
+	for i := 0; i < minLen; i++ {
+		xorResult[i] = hN[i] ^ hG[i]
+	}
+
+	// Compute the final proof M1 = H( H(N) XOR H(g) | H(U) | s | A | B | K )
+	proof := p.hashFunc.New()
+	proof.Write(xorResult)   // H(N) XOR H(g)
+	proof.Write(uBytes)      // H(U) where U = H(A | B)
+	proof.Write(SBytes)      // s - shared secret (session key)
+	proof.Write(ABytes)      // A - client's public value
+	proof.Write(BBytes)      // B - server's public value
+	proof.Write(p.k.Bytes()) // K - SRP multiplier parameter
+
+	return proof.Sum(nil)
+}
