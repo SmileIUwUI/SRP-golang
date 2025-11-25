@@ -48,7 +48,7 @@ func (p *Params) GenerateVerifier(username string, password string) ([]byte, []b
 //   - clientPublic (A) - client's public key A = g^a mod N
 //   - clientPrivate (a) - client's private ephemeral value
 //   - error if any operation fails
-func (p *Params) GenerateKeyClient() ([]byte, []byte, error) {
+func (p *Params) GenerateKeyEphemeralClient() ([]byte, []byte, error) {
 	// Generate client's private ephemeral value a with sufficient entropy
 	byteLen := (p.abLen + 7) / 8 // Convert bits to bytes (rounding up)
 	aBytes := make([]byte, byteLen)

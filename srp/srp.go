@@ -95,13 +95,24 @@ func NewParams(secure int16, hashFunc crypto.Hash, lenSalt int16) (*Params, erro
 	}, nil
 }
 
-// calculateK computes the SRP multiplier parameter k
-// k = H(N | G) where N and G are padded to the same length
-// Follows RFC 5054 specification for parameter encoding
-// n - large safe prime
-// g - generator modulo n
-// hashFunc - hash function to use for calculation
-// Returns k parameter or error if validation fails
+// padToLength pads a byte slice to the specified length with leading zeros
+// If the input is already longer than the target length, it returns the original slice
+// bytes - input byte slice to pad
+// targetLen - desired length of the output slice
+// Returns padded byte slice
+func padToLength(bytes []byte, targetLen int) []byte {
+	currentLen := len(bytes)
+	if currentLen >= targetLen {
+		return bytes
+	}
+
+	// Create padding of zeros
+	padding := make([]byte, targetLen-currentLen)
+
+	// Append original bytes after padding
+	return append(padding, bytes...)
+}
+
 func calculateK(n *big.Int, g *big.Int, hashFunc crypto.Hash) (*big.Int, error) {
 	// Create new hash instance
 	h := hashFunc.New()
@@ -121,8 +132,7 @@ func calculateK(n *big.Int, g *big.Int, hashFunc crypto.Hash) (*big.Int, error) 
 		}
 
 		// Pad gBytes with leading zeros to match the length of nBytes
-		padding := make([]byte, nLen-gLen)
-		gBytes = append(padding, gBytes...)
+		gBytes = padToLength(gBytes, nLen)
 	}
 
 	// Compute hash: H(N | G)

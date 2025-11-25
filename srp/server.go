@@ -13,7 +13,7 @@ import (
 //   - serverPublic (B) - server's public key
 //   - serverPrivate (b) - server's private ephemeral value
 //   - error if any operation fails
-func (p *Params) GenerateKeyServer(verifier []byte) ([]byte, []byte, error) {
+func (p *Params) GenerateEphemeralKeyServer(verifier []byte) ([]byte, []byte, error) {
 	// Generate server's private ephemeral value b
 	byteLen := (p.abLen + 7) / 8 // Convert bits to bytes (rounding up)
 	bBytes := make([]byte, byteLen)
@@ -51,4 +51,58 @@ func (p *Params) GenerateKeyServer(verifier []byte) ([]byte, []byte, error) {
 
 	// Return server's public key and private value as byte slices
 	return B.Bytes(), bBytes, nil
+}
+
+// GenerateSharedKeyServer computes the server's shared session key
+// using the formula: S = (A * v^u) ^ b mod N
+// ABytes - client's public ephemeral value A
+// BBytes - server's public ephemeral value B
+// bBytes - server's private ephemeral value b
+// verifierBytes - client's verifier v = g^x mod N
+// Returns the shared secret S or error if validation fails
+func (p *Params) GenerateSharedKeyServer(ABytes []byte, BBytes []byte, bBytes []byte, verifierBytes []byte) ([]byte, error) {
+	// Validate that all required input parameters are provided
+	if len(ABytes) == 0 || len(BBytes) == 0 || len(bBytes) == 0 || len(verifierBytes) == 0 {
+		return nil, errors.New("invalid input parameters: all parameters must be non-empty")
+	}
+
+	// Calculate the scrambling parameter u = H(PAD(A) | PAD(B))
+	// u is computed by hashing the padded representations of A and B
+	nLength := len(p.n.Bytes())
+	uHash := p.hashFunc.New()
+	uHash.Write(padToLength(ABytes, nLength))
+	uHash.Write(padToLength(BBytes, nLength))
+	u := new(big.Int).SetBytes(uHash.Sum(nil))
+
+	// Convert byte slices to big.Int for mathematical operations
+	A := new(big.Int).SetBytes(ABytes)        // A = g^a mod N (from client)
+	b := new(big.Int).SetBytes(bBytes)        // Server's private ephemeral value
+	v := new(big.Int).SetBytes(verifierBytes) // v = g^x mod N (client's verifier)
+
+	// RFC 5054 security validation: A must not be 0 and must be less than N
+	if A.Sign() == 0 {
+		return nil, errors.New("client public value A cannot be zero")
+	}
+	if A.Cmp(p.n) >= 0 {
+		return nil, errors.New("client public value A must be less than N")
+	}
+
+	// Compute shared secret using server formula: S = (A * v^u) ^ b mod N
+
+	// Step 1: Compute v^u mod N
+	vu := new(big.Int).Exp(v, u, p.n)
+
+	// Step 2: Compute A * v^u mod N
+	Avu := new(big.Int).Mul(A, vu)
+	Avu.Mod(Avu, p.n)
+
+	// Step 3: Compute S = (A * v^u) ^ b mod N
+	S := new(big.Int).Exp(Avu, b, p.n)
+
+	// Additional security check: ensure shared secret is not zero
+	if S.Sign() == 0 {
+		return nil, errors.New("computed shared secret cannot be zero")
+	}
+
+	return S.Bytes(), nil
 }
